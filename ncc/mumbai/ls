@@ -1,0 +1,3 @@
+gcloud compute instances list --filter="labels.goog-dm=ncc-mumbai" --sort-by name
+#gcloud compute routers list --filter="name ~ vegas"
+#gcloud alpha network-connectivity spokes list --region asia-south1

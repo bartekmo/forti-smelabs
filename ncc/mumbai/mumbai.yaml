@@ -1,0 +1,200 @@
+imports:
+- path: ../subnets-and-gates.jinja
+  name: subnets-and-gates.jinja
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_24757586/FGVM04TM21001501.lic
+  name: lic1.lic
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_24757586/FGVM04TM21001502.lic
+  name: lic2.lic
+- path: https://raw.githubusercontent.com/bartekmo/fortinet-gcp-solutions/v2/deployment-manager/FortiGate/modules/singlevm2.jinja
+  name: singlevm2.jinja
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_24757586/FGVM04TM21001504.lic
+  name: site-mumbai.lic
+
+resources:
+- name: india1-vpc-pub
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: india1-subnet-pub
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: 172.16.103.0/24
+    network: $(ref.india1-vpc-pub.selfLink)
+    region: asia-south1
+- name: india1-vpc-internal
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: india1-subnet-internal
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: 192.168.103.0/24
+    network: $(ref.india1-vpc-internal.selfLink)
+    region: asia-south1
+
+- name: india1-server
+  type: compute.v1.instance
+  properties:
+    zone: asia-south1-b
+    networkInterfaces:
+    - network: $(ref.india1-vpc-internal.selfLink)
+      subnetwork: $(ref.india1-subnet-internal.selfLink)
+      networkIP: 192.168.103.10
+    machineType: zones/asia-south1-b/machineTypes/e2-small
+    disks:
+    - deviceName: boot
+      type: PERSISTENT
+      boot: true
+      autoDelete: true
+      initializeParams:
+        sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+
+- name: india1-fgt
+  type: singlevm2.jinja
+  properties:
+    prefix: india1
+    zone: asia-south1-b
+    version: 7.0.0
+    license:
+      type: byol
+      lic: site-mumbai.lic
+    networks:
+    - vpcLink: $(ref.india1-vpc-pub.selfLink)
+      subnetLink: $(ref.india1-subnet-pub.selfLink)
+      externalIP:
+        name: site-eip
+        address: $(ref.india1-site-eip.address)
+    - vpcLink: $(ref.india1-vpc-internal.selfLink)
+      subnetLink: $(ref.india1-subnet-internal.selfLink)
+    fwConfig: |
+      config system admin
+        edit admin
+        set ssh-public-key1 "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5PxNXFGASHWHew8Xqm5t2GynVENxP3yqWbvyMk7lMTLpIz43N3EFLbFetVXZktgh9alxmocY42UN4iDFAKuz0UyeCkHxWRTDRKqMQWkZYaupQYgyREtUVm1qTA3Hm5Ah29+XRnpKoyb9MMiulwNJHNdusES6Ta2XjrMepNZ6AHP6GXqeb+W1jBHZZhI4YsFCYX2SxT6j0Ac05BFatNl6qwGue7oS38WYtueguw+8TJLb0yii9wy4697vCKW1SByk5PoiPGMNfK2JTYHjbULipPHF8J17f13aowv+t57cBsaczlyCd0CznYCELkFyBseNpvlgtb+J+P2A3qV61ZEWX"
+        next
+      end
+      config router bgp
+        set as 65103
+        config neighbor
+          edit "169.254.103.1"
+            set remote-as 65003
+          next
+        end
+        config network
+          edit 1
+            set prefix 192.168.103.0/24
+          next
+        end
+      end
+      config vpn ipsec phase1-interface
+        edit india1-nccmumbai
+          set interface "port1"
+          set peertype any
+          set net-device disable
+          set remote-gw $(ref.ncc-mumbai-ext-ip.address)
+          set psksecret WnBy8UzNCMNNpAJs2MXa9emya
+        next
+      end
+      config vpn ipsec phase2-interface
+        edit india1-nccmumbai
+          set phase1name india1-nccmumbai
+          set src-subnet 0.0.0.0/0
+          set dst-subnet 0.0.0.0/0
+        next
+      end
+      config system interface
+        edit india1-nccmumbai
+          set ip 169.254.103.2/32
+          set remote-ip 169.254.103.1 255.255.255.248
+        next
+      end
+      config firewall policy
+        edit 10
+        set name "vpn-in"
+        set srcintf "india1-nccmumbai"
+        set dstintf "port2"
+        set action accept
+        set srcaddr "all"
+        set dstaddr "all"
+        set schedule "always"
+        set service "ALL"
+        next
+      end
+
+- name: mumbai-subnets-and-Gates
+  type: subnets-and-gates.jinja
+  properties:
+    location: mumbai
+    lics:
+    - lic1.lic
+    - lic2.lic
+    fwConfig: |
+      config router bgp
+        set as 65003
+        config neighbor
+          edit "172.16.3.11"
+            set remote-as 65000
+          next
+          edit "172.16.3.12"
+            set remote-as 65000
+          next
+          edit "169.254.103.2"
+            set remote-as 65103
+          next
+        end
+      end
+      config vpn ipsec phase1-interface
+        edit "nccmumbai-india1"
+          set interface "port1"
+          set peertype any
+          set net-device disable
+          set remote-gw $(ref.india1-site-eip.address)
+          set psksecret WnBy8UzNCMNNpAJs2MXa9emya
+        next
+      end
+      config vpn ipsec phase2-interface
+        edit "nccmumbai-india1"
+          set phase1name "nccmumbai-india1"
+          set src-subnet 0.0.0.0 0.0.0.0
+          set dst-subnet 0.0.0.0 0.0.0.0
+        next
+      end
+      config system interface
+        edit nccmumbai-india1
+          set ip 169.254.103.1/32
+          set remote-ip 169.254.103.2 255.255.255.248
+        next
+      end
+      config firewall policy
+        edit 10
+          set name "vpn-in"
+          set srcintf "nccmumbai-india1"
+          set dstintf "port2"
+          set action accept
+          set srcaddr "all"
+          set dstaddr "all"
+          set schedule "always"
+          set service "ALL"
+        next
+        edit 11
+          set name "vpn-out"
+          set srcintf "port2"
+          set dstintf "nccmumbai-india1"
+          set action accept
+          set srcaddr "all"
+          set dstaddr "all"
+          set schedule "always"
+          set service "ALL"
+        next
+      end
+
+
+
+outputs:
+- name: fgt1Link
+  value: $(ref.mumbai-subnets-and-Gates.fgt1Link)
+- name: fgt2Link
+  value: $(ref.mumbai-subnets-and-Gates.fgt2Link)
+- name: fgt1IntIp
+  value: $(ref.mumbai-subnets-and-Gates.fgt1IntIp)
+- name: fgt2IntIp
+  value: $(ref.mumbai-subnets-and-Gates.fgt2IntIp)

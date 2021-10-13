@@ -1,0 +1,6 @@
+spoke=ncc-mumbai
+region=asia-south1
+
+gcloud compute routers delete $spoke-crt --region $region
+gcloud alpha network-connectivity spokes delete $spoke-spoke --region $region
+gcloud deployment-manager deployments delete $spoke -q

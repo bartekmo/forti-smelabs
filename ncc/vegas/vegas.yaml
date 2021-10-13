@@ -1,0 +1,200 @@
+imports:
+- path: ../subnets-and-gates.jinja
+  name: subnets-and-gates.jinja
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_40009717/FGVM04TM21008013.lic
+  name: lic1.lic
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_40009717/FGVM04TM21008014.lic
+  name: lic2.lic
+- path: https://raw.githubusercontent.com/bartekmo/fortinet-gcp-solutions/v2/deployment-manager/FortiGate/modules/singlevm2.jinja
+  name: singlevm2.jinja
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_24757586/FGVM04TM21001503.lic
+  name: site-vegas.lic
+
+resources:
+- name: us1-vpc-pub
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: us1-subnet-pub
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: 172.16.102.0/24
+    network: $(ref.us1-vpc-pub.selfLink)
+    region: us-west4
+- name: us1-vpc-internal
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: us1-subnet-internal
+  type: compute.v1.subnetwork
+  properties:
+    ipCidrRange: 192.168.102.0/24
+    network: $(ref.us1-vpc-internal.selfLink)
+    region: us-west4
+
+- name: us1-server
+  type: compute.v1.instance
+  properties:
+    zone: us-west4-b
+    networkInterfaces:
+    - network: $(ref.us1-vpc-internal.selfLink)
+      subnetwork: $(ref.us1-subnet-internal.selfLink)
+      networkIP: 192.168.102.10
+    machineType: zones/us-west4-b/machineTypes/e2-small
+    disks:
+    - deviceName: boot
+      type: PERSISTENT
+      boot: true
+      autoDelete: true
+      initializeParams:
+        sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+
+- name: us1-fgt
+  type: singlevm2.jinja
+  properties:
+    prefix: us1
+    zone: us-west4-b
+    version: 7.0.0
+    license:
+      type: byol
+      lic: site-vegas.lic
+    networks:
+    - vpcLink: $(ref.us1-vpc-pub.selfLink)
+      subnetLink: $(ref.us1-subnet-pub.selfLink)
+      externalIP:
+        name: site-eip
+        address: $(ref.us1-site-eip.address)
+    - vpcLink: $(ref.us1-vpc-internal.selfLink)
+      subnetLink: $(ref.us1-subnet-internal.selfLink)
+    fwConfig: |
+      config system admin
+        edit admin
+        set ssh-public-key1 "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5PxNXFGASHWHew8Xqm5t2GynVENxP3yqWbvyMk7lMTLpIz43N3EFLbFetVXZktgh9alxmocY42UN4iDFAKuz0UyeCkHxWRTDRKqMQWkZYaupQYgyREtUVm1qTA3Hm5Ah29+XRnpKoyb9MMiulwNJHNdusES6Ta2XjrMepNZ6AHP6GXqeb+W1jBHZZhI4YsFCYX2SxT6j0Ac05BFatNl6qwGue7oS38WYtueguw+8TJLb0yii9wy4697vCKW1SByk5PoiPGMNfK2JTYHjbULipPHF8J17f13aowv+t57cBsaczlyCd0CznYCELkFyBseNpvlgtb+J+P2A3qV61ZEWX"
+        next
+      end
+      config router bgp
+        set as 65102
+        config neighbor
+          edit "169.254.102.1"
+            set remote-as 65002
+          next
+        end
+        config network
+          edit 1
+            set prefix 192.168.102.0/24
+          next
+        end
+      end
+      config vpn ipsec phase1-interface
+        edit us1-nccvegas
+          set interface "port1"
+          set peertype any
+          set net-device disable
+          set remote-gw $(ref.ncc-vegas-ext-ip.address)
+          set psksecret WnBy8UzNCMNNpAJs2MXa9emya
+        next
+      end
+      config vpn ipsec phase2-interface
+        edit us1-nccvegas
+          set phase1name us1-nccvegas
+          set src-subnet 0.0.0.0/0
+          set dst-subnet 0.0.0.0/0
+        next
+      end
+      config system interface
+        edit us1-nccvegas
+          set ip 169.254.102.2/32
+          set remote-ip 169.254.102.1 255.255.255.248
+        next
+      end
+      config firewall policy
+        edit 10
+        set name "vpn-in"
+        set srcintf "us1-nccvegas"
+        set dstintf "port2"
+        set action accept
+        set srcaddr "all"
+        set dstaddr "all"
+        set schedule "always"
+        set service "ALL"
+        next
+      end
+
+- name: Vegas-subnets-and-Gates
+  type: subnets-and-gates.jinja
+  properties:
+    location: vegas
+    lics:
+    - lic1.lic
+    - lic2.lic
+    fwConfig: |
+      config router bgp
+        set as 65002
+        config neighbor
+          edit "172.16.2.11"
+            set remote-as 65000
+          next
+          edit "172.16.2.12"
+            set remote-as 65000
+          next
+          edit "169.254.102.2"
+            set remote-as 65102
+          next
+        end
+      end
+      config vpn ipsec phase1-interface
+        edit "nccvegas-us1"
+          set interface "port1"
+          set peertype any
+          set net-device disable
+          set remote-gw $(ref.us1-site-eip.address)
+          set psksecret WnBy8UzNCMNNpAJs2MXa9emya
+        next
+      end
+      config vpn ipsec phase2-interface
+        edit "nccvegas-us1"
+          set phase1name "nccvegas-us1"
+          set src-subnet 0.0.0.0 0.0.0.0
+          set dst-subnet 0.0.0.0 0.0.0.0
+        next
+      end
+      config system interface
+        edit nccvegas-us1
+          set ip 169.254.102.1/32
+          set remote-ip 169.254.102.2 255.255.255.248
+        next
+      end
+      config firewall policy
+        edit 10
+          set name "vpn-in"
+          set srcintf "nccvegas-us1"
+          set dstintf "port2"
+          set action accept
+          set srcaddr "all"
+          set dstaddr "all"
+          set schedule "always"
+          set service "ALL"
+        next
+        edit 11
+          set name "vpn-out"
+          set srcintf "port2"
+          set dstintf "nccvegas-us1"
+          set action accept
+          set srcaddr "all"
+          set dstaddr "all"
+          set schedule "always"
+          set service "ALL"
+        next
+      end
+
+
+
+outputs:
+- name: fgt1Link
+  value: $(ref.Vegas-subnets-and-Gates.fgt1Link)
+- name: fgt2Link
+  value: $(ref.Vegas-subnets-and-Gates.fgt2Link)
+- name: fgt1IntIp
+  value: $(ref.Vegas-subnets-and-Gates.fgt1IntIp)
+- name: fgt2IntIp
+  value: $(ref.Vegas-subnets-and-Gates.fgt2IntIp)

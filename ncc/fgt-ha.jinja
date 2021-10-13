@@ -1,0 +1,131 @@
+{% set prefix = properties.prefix|default(env.deployment) %}
+
+{% import "netcalc.jinja" as netcalc %}
+{% import "images.jinja" as images %}
+
+{% set defaultExternalIpName="ext-ip" %}
+{% set firmwareImage=images.getFgtImage( properties.version, properties.license.type ) %}
+
+resources:
+- name: {{ prefix }}-{{defaultExternalIpName}}
+  type: compute.v1.address
+  properties:
+    region: {{ properties.region }}
+    description: Floating public IP for FGT cluster
+
+- name: {{ prefix }}-natcr
+  type: compute.v1.router
+  properties:
+    region: {{ properties.region }}
+    network: {{ properties.networks.external.vpc }}
+    nats:
+    - name: {{ prefix }}-nat
+      sourceSubnetworkIpRangesToNat: ALL_SUBNETWORKS_ALL_IP_RANGES
+      natIpAllocateOption: AUTO_ONLY
+
+{% for instance in ["primary", "secondary"] %}
+- name: {{ instance }}
+  type: singlevm.jinja
+  properties:
+    prefix: {{ prefix }}
+    region: {{ properties.region }}
+    zone: {{ properties.zones[ loop.index0 ]}}
+    instanceType: {{ properties.instanceType }}
+    version: {{ properties.version }}
+    multiIpSubnetEnable: {{ properties.multiIpSubnetEnable }}
+    name: fgt{{ loop.index }}
+    {% if loop.index0==0 and properties.attachPublicIP %}
+    externalIP:
+      address: $(ref.{{ prefix }}-{{ defaultExternalIpName }}.address )
+      networkTier: $(ref.{{ prefix }}-{{ defaultExternalIpName }}.networkTier )
+    {% else %}
+    attachPublicIP: false
+    {% endif %}
+    license:
+      type: {{ properties.license.type }}
+      {% if properties.license.type=='byol' and 'lics' in properties.license %}
+      lic: {{ properties.license.lics[ loop.index0 ]}}
+      {% endif %}
+    networks:
+      external:
+        vpc: {{ properties.networks.external.vpc }}
+        subnet: {{ properties.networks.external.subnet }}
+        {% if "ipCidrRange" in properties.networks.external %}
+        ipCidrRange: {{ properties.networks.external.ipCidrRange }}
+        networkIP: {{ netcalc.getNthIpWithMask( properties.networks.external.ipCidrRange, loop.index ) }}
+        {% endif %}
+      internal:
+        vpc: {{ properties.networks.internal.vpc }}
+        subnet: {{ properties.networks.internal.subnet }}
+        {% if "ipCidrRange" in properties.networks.internal %}
+        ipCidrRange: {{ properties.networks.internal.ipCidrRange }}
+        networkIP: {{ netcalc.getNthIpWithMask( properties.networks.internal.ipCidrRange, loop.index ) }}
+        {% endif %}
+      hasync:
+        vpc: {{ properties.networks.hasync.vpc }}
+        subnet: {{ properties.networks.hasync.subnet }}
+        ipCidrRange: {{ properties.networks.hasync.ipCidrRange }}
+        networkIP: {{ netcalc.getNthIpWithMask( properties.networks.hasync.ipCidrRange, loop.index ) }}
+      mgmt:
+        vpc: {{ properties.networks.mgmt.vpc }}
+        subnet: {{ properties.networks.mgmt.subnet }}
+        ipCidrRange: {{ properties.networks.mgmt.ipCidrRange }}
+        networkIP: {{ netcalc.getNthIpWithMask( properties.networks.mgmt.ipCidrRange, loop.index ) }}
+    createCloudFirewallRules: false
+    routes: []
+    fwConfig: |
+      config system ha
+        set group-name "cluster1"
+        set mode a-p
+        set hbdev "port3" 50
+        set session-pickup enable
+        set ha-mgmt-status enable
+        config ha-mgmt-interfaces
+          edit 1
+          set interface "port4"
+          set gateway {{ netcalc.getNthIp( properties.networks.mgmt.ipCidrRange, 0 )}}
+          next
+        end
+        set override disable
+        set priority {{ loop.index%2 }}
+        set unicast-hb enable
+        set unicast-hb-peerip {{ netcalc.getNthIp( properties.networks.hasync.ipCidrRange, (loop.index%2)+1 )}}
+        set unicast-hb-netmask {{ netcalc.getNetmaskLong( properties.networks.hasync.ipCidrRange )}}
+      end
+      config system sdn-connector
+        edit "gcp_conn"
+        set type gcp
+        set ha-status enable
+        {%- if properties.attachPublicIP %}
+        config external-ip
+          edit "{{ prefix }}-{{ defaultExternalIpName }}"
+          next
+        end
+        {%- endif %}
+        next
+      end
+      config system interface
+        edit port1
+        set allowaccess ping
+        next
+      end
+      {{ properties.fwConfig | indent(6) }}
+{% endfor %}
+
+outputs:
+- name: FGT1-mgmt-ip
+  value: $(ref.{{ prefix}}-fgt1.networkInterfaces[3].accessConfigs[0].natIP)
+- name: FGT2-mgmt-ip
+  value: $(ref.{{ prefix}}-fgt2.networkInterfaces[3].accessConfigs[0].natIP)
+- name: Public_IP
+  value: $(ref.{{ prefix }}-{{defaultExternalIpName}}.address)
+- name: defaultPassword
+  value: $(ref.{{ prefix }}-fgt1.id)
+- name: fgt1Link
+  value: $(ref.{{ prefix }}-fgt1.selfLink )
+- name: fgt2Link
+  value: $(ref.{{ prefix }}-fgt2.selfLink )
+- name: fgt1IntIp
+  value: $(ref.{{ prefix}}-fgt1.networkInterfaces[1].networkIP)
+- name: fgt2IntIp
+  value: $(ref.{{ prefix}}-fgt2.networkInterfaces[1].networkIP)

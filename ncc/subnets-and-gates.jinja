@@ -1,0 +1,76 @@
+{% set prefix="ncc" %}
+
+resources:
+- name: {{prefix}}-pub-{{properties.location}}
+  type: gcp-types/compute-v1:subnetworks
+  properties:
+    region: {{properties.regionMap[ properties.location ]}}
+    network: projects/{{env.project}}/global/networks/{{prefix}}-pub-vpc
+    ipCidrRange: {{properties.cidrMap[ properties.location ]}}.64/26
+
+- name: {{prefix}}-hasync-{{properties.location}}
+  type: gcp-types/compute-v1:subnetworks
+  properties:
+    region: {{properties.regionMap[ properties.location ]}}
+    network: projects/{{env.project}}/global/networks/{{prefix}}-hasync-vpc
+    ipCidrRange: {{properties.cidrMap[ properties.location ]}}.128/26
+
+- name: {{prefix}}-mgmt-{{properties.location}}
+  type: gcp-types/compute-v1:subnetworks
+  properties:
+    region: {{properties.regionMap[ properties.location ]}}
+    network: projects/{{env.project}}/global/networks/{{prefix}}-mgmt-vpc
+    ipCidrRange: {{properties.cidrMap[ properties.location ]}}.192/26
+
+- name: {{prefix}}-hub-{{properties.location}}
+  type: gcp-types/compute-v1:subnetworks
+  properties:
+    region: {{properties.regionMap[ properties.location ]}}
+    network: projects/{{env.project}}/global/networks/{{prefix}}-hub-vpc
+    ipCidrRange: {{properties.cidrMap[ properties.location ]}}.0/26
+
+- name: fortigates-{{properties.location}}
+  type: fgt-ha.jinja
+  properties:
+    prefix: {{prefix}}-{{properties.location}}
+    region: {{properties.regionMap[ properties.location ]}}
+    zones:
+    - {{properties.regionMap[ properties.location ]}}-b
+    - {{properties.regionMap[ properties.location ]}}-c
+    license:
+      type: byol
+      lics: {{properties.lics}}
+    networks:
+      external:
+        vpc: projects/{{env.project}}/global/networks/{{prefix}}-pub-vpc
+        subnet: $(ref.{{prefix}}-pub-{{properties.location}}.selfLink)
+        ipCidrRange: {{properties.cidrMap[ properties.location ]}}.64/26
+      internal:
+        vpc: projects/{{env.project}}/global/networks/{{prefix}}-hub-vpc
+        subnet: $(ref.{{prefix}}-hub-{{properties.location}}.selfLink)
+        ipCidrRange: {{properties.cidrMap[ properties.location ]}}.0/26
+      hasync:
+        vpc: projects/{{env.project}}/global/networks/{{prefix}}-hasync-vpc
+        subnet: $(ref.{{prefix}}-hasync-{{properties.location}}.selfLink)
+        ipCidrRange: {{properties.cidrMap[ properties.location ]}}.128/26
+      mgmt:
+        vpc: projects/{{env.project}}/global/networks/{{prefix}}-mgmt-vpc
+        subnet: $(ref.{{prefix}}-mgmt-{{properties.location}}.selfLink)
+        ipCidrRange: {{properties.cidrMap[ properties.location ]}}.192/26
+    fwConfig: |
+      config system admin
+        edit admin
+        set ssh-public-key1 "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5PxNXFGASHWHew8Xqm5t2GynVENxP3yqWbvyMk7lMTLpIz43N3EFLbFetVXZktgh9alxmocY42UN4iDFAKuz0UyeCkHxWRTDRKqMQWkZYaupQYgyREtUVm1qTA3Hm5Ah29+XRnpKoyb9MMiulwNJHNdusES6Ta2XjrMepNZ6AHP6GXqeb+W1jBHZZhI4YsFCYX2SxT6j0Ac05BFatNl6qwGue7oS38WYtueguw+8TJLb0yii9wy4697vCKW1SByk5PoiPGMNfK2JTYHjbULipPHF8J17f13aowv+t57cBsaczlyCd0CznYCELkFyBseNpvlgtb+J+P2A3qV61ZEWX"
+        next
+      end
+      {{properties.fwConfig | indent(6)}}
+
+outputs:
+- name: fgt1Link
+  value: $(ref.fortigates-{{properties.location}}.fgt1Link)
+- name: fgt2Link
+  value: $(ref.fortigates-{{properties.location}}.fgt2Link)
+- name: fgt1IntIp
+  value: $(ref.fortigates-{{properties.location}}.fgt1IntIp)
+- name: fgt2IntIp
+  value: $(ref.fortigates-{{properties.location}}.fgt2IntIp)

@@ -1,0 +1,7 @@
+spoke=ncc-vegas
+region=us-west4
+project=emea-sme-training-2020-275813
+
+gcloud compute routers delete $spoke-crt --region $region
+gcloud alpha network-connectivity spokes delete $spoke-spoke --region $region
+gcloud deployment-manager deployments delete $spoke -q

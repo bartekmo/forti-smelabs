@@ -1,0 +1,46 @@
+info:
+  title: FTNT SME NCC Labs - subnets
+  description: ""
+  version: 1.0
+
+imports:
+- path: fgt-ha.jinja
+
+required:
+- location
+
+properties:
+  location:
+    type: string
+    enum:
+    - london
+    - vegas
+    - mumbai
+  fwConfig:
+    type: string
+  regionMap:
+    type: object
+    default:
+      london: europe-west2
+      vegas: us-west4
+      mumbai: asia-south1
+      delhi: asia-south2
+      tokyo: asia-northeast1
+      osaka: asia-northeast2
+      sydney: australia-southeast1
+      melbourne: australia-southeast2
+      iowa: us-central1
+      carolina: us-east1
+      ashburn: us-east4
+      virginia: us-east4
+      dalles: us-west1
+      oregon: us-west1
+      la: us-west2
+      california: us-west2
+      losangeles: us-west2
+  cidrMap:
+    type: object
+    default:
+      london: 172.16.1
+      vegas: 172.16.2
+      mumbai: 172.16.3

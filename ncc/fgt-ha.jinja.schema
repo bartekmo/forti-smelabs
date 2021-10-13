@@ -1,0 +1,62 @@
+info:
+  title: FGT HA cluster for SME NCC labs
+  version: 1.0
+
+imports:
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/gcp-dm/utils/netcalc.jinja
+  name: netcalc.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/gcp-dm/utils/images.jinja
+  name: images.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/gcp-dm/fortigate/singlevm.jinja
+  name: singlevm.jinja
+
+required:
+- zones
+- region
+- networks
+
+properties:
+  prefix:
+    type: string
+    description: Prefix to be added to all resource names
+  region:
+    type: string
+    description: Region to deploy to
+  zones:
+    type: array
+    description: Availability zones names list
+  instanceType:
+    type: string
+    description: Instance size to be used for FGT deployment
+    default: e2-highcpu-4
+  license:
+    type: object
+    description: Licensing information. properties.type can be "byol" or "payg". For BYOL deployments include lics array pointing to the license files.
+    default:
+      type: payg
+  version:
+    type: string
+    description: Firmware version to deploy.
+    default: 7.0.1
+  networks:
+    type: object
+    description: Indicate VPC Networks and subnets to be used (internal, external, hasync, mgmt). Each network need references to vpc and subnet (vpc and subnet properties) as well as cidr defined.
+  multiIpSubnetEnable:
+    type: boolean
+    default: true
+  serviceAccount:
+    type: string
+    description: Service account to be assigned to the instances
+    default: default
+  serialPortEnable:
+    type: boolean
+    description: Enable or disable serial port for instances
+    default: true
+  attachPublicIP:
+    type: boolean
+    description: Set to false for deployments without directly attached public IP
+    default: true
+  fwConfig:
+    type: string
+    description: Additional configuration to be passed to the firewall
+    default: ""

@@ -1,0 +1,29 @@
+###############################################################
+# MUMBAI
+###############################################################
+
+spoke=ncc-mumbai
+region=asia-south1
+project=emea-sme-training-2020-275813
+
+#create subnets and fortigate instances for a spoke
+gcloud deployment-manager deployments create $spoke --config mumbai.yaml
+
+# create NCC spoke
+gcloud alpha network-connectivity spokes create $spoke-spoke --hub=ncc-hub --region $region \
+  --router-appliance="instance=https://www.googleapis.com/compute/alpha/projects/$project/zones/$region-b/instances/$spoke-fgt1,ip=172.16.3.2" \
+  --router-appliance="instance=https://www.googleapis.com/compute/alpha/projects/$project/zones/$region-c/instances/$spoke-fgt2,ip=172.16.3.3"
+
+# create cloud router with 2 NICs
+gcloud compute routers create $spoke-crt --region $region --network ncc-hub-vpc --asn 65000
+
+gcloud beta compute routers add-interface $spoke-crt --interface-name $spoke-crt-nic0 --subnetwork ncc-hub-mumbai --region $region --ip-address 172.16.3.11
+gcloud beta compute routers add-interface $spoke-crt --interface-name $spoke-crt-nic1 --subnetwork ncc-hub-mumbai --region $region --ip-address 172.16.3.12 --redundant-interface $spoke-crt-nic0
+
+# BGP peering fgt 1
+gcloud beta compute routers add-bgp-peer $spoke-crt --peer-name peer-nic0-fgt-$spoke-a --interface $spoke-crt-nic0 --peer-ip-address 172.16.3.2 --peer-asn 65003 --instance $spoke-fgt1 --instance-zone $region-b --region $region
+gcloud beta compute routers add-bgp-peer $spoke-crt --peer-name peer-nic1-fgt-$spoke-a --interface $spoke-crt-nic1 --peer-ip-address 172.16.3.2 --peer-asn 65003 --instance $spoke-fgt1 --instance-zone $region-b --region $region
+
+# BGP peering fgt 2
+gcloud beta compute routers add-bgp-peer $spoke-crt --peer-name peer-nic0-fgt-$spoke-c --interface $spoke-crt-nic0 --peer-ip-address 172.16.3.3 --peer-asn 65003 --instance $spoke-fgt2 --instance-zone $region-c --region $region
+gcloud beta compute routers add-bgp-peer $spoke-crt --peer-name peer-nic1-fgt-$spoke-c --interface $spoke-crt-nic1 --peer-ip-address 172.16.3.3 --peer-asn 65003 --instance $spoke-fgt2 --instance-zone $region-c --region $region

@@ -1,0 +1,25 @@
+imports:
+- path: subnets-and-gates.jinja
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_40009717/FGVM04TM21008011.lic
+  name: lic1.lic
+- path: /Users/bartekmo/Documents/secrets/FG-VM04_40009717/FGVM04TM21008012.lic
+  name: lic2.lic
+
+resources:
+- name: London_subnets_and_Gates
+  type: subnets-and-gates.jinja
+  properties:
+    location: london
+    lics:
+    - lic1.lic
+    - lic2.lic
+
+outputs:
+- name: fgt1Link
+  value: $(ref.London_subnets_and_Gates.fgt1Link)
+- name: fgt2Link
+  value: $(ref.London_subnets_and_Gates.fgt2Link)
+- name: fgt1IntIp
+  value: $(ref.London_subnets_and_Gates.fgt1IntIp)
+- name: fgt2IntIp
+  value: $(ref.London_subnets_and_Gates.fgt2IntIp)
